@@ -2,7 +2,7 @@ package Kwiki::Scode;
 use strict;
 use warnings;
 use Kwiki::Plugin '-Base';
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 use GD;
 use CGI;
