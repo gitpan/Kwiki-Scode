@@ -6,10 +6,9 @@ inc/Module/Install/Makefile.pm
 inc/Module/Install/Metadata.pm
 inc/Module/Install/Win32.pm
 inc/Module/Install/WriteAll.pm
-lib/Kwiki/Edit/Scode.pm
 lib/Kwiki/Scode.pm
 Makefile.PL
+ChangeLog
 MANIFEST			This list of files
 META.yml
-README
 t/00.use.t

@@ -1,31 +1,56 @@
 package Kwiki::Scode;
-use strict;
-use warnings;
-use Kwiki::Plugin '-Base';
-our $VERSION = '0.02';
-
+use Kwiki::Plugin -Base;
+use mixin 'Kwiki::Installer';
 use GD;
-use CGI;
+our $VERSION = '0.03';
 
 const class_id => 'scode';
 const class_title => 'Scode prevents wiki spam';
+const cgi_class => 'Kwiki::Scode::CGI';
+
+field 'captcha_code';
 
 my $tmpdir = "/tmp/";
 my $scode_length = 6;
 my $scode_maxtmp = 50;
 
-sub init {
-    $tmpdir = $self->plugin_directory . '/';
-}
-
 sub register {
     my $reg = shift;
     $reg->add(action => 'captcha');
+    $reg->add(hook => 'edit:edit', post => 'generate_scode');
+    $reg->add(hook => 'edit:save', pre => 'check_scode');
+}
+
+sub generate_scode {
+    my $hook = pop;
+    my $scode = $self->hub->load_class('scode');
+    srand int (time/10)+$$;
+    my $code = int rand($scode->scode_tmp());
+    $code++;
+    $scode->scode_create($code);
+    $scode->captcha_code($code);
+    my ($html) = $hook->returned;
+    my $img_html = $scode->template_process('scode_image.html', captcha_code => $code);
+    $html =~ s{<textarea}{$img_html<textarea}s;
+    return $html;
+}
+
+sub check_scode {
+    my $hook = pop;
+    my $scode = $self->hub->load_class('scode');
+    unless($scode->scode_granted) {
+        $hook->code(undef);
+        return $self->redirect($self->redirect($self->pages->current->uri));
+    }
+}
+
+sub scode_granted {
+    my $answer = $self->scode_get($self->cgi->code);
+    $answer eq $self->cgi->captcha;
 }
 
 sub captcha {
-    my $cgi = new CGI;
-    my $code = $cgi->param('code');
+    my $code = $self->cgi->code;
 
     # Calculate code
     my $scode = $self->scode_get($code);
@@ -57,14 +82,16 @@ sub captcha {
     # Write the code
     $im->string(gdGiantFont,8,5,$scode,$c_code);
 
-    # Generate the cookie
-    my $cookie = $cgi->cookie(-name=>'code',-value=> $code);
-
-    # Output the image
     binmode STDOUT;
-    print $cgi->header(-type=>'image/png');
-    print $im->png;
-
+    for(qw(png jpeg gif)) {
+        my $img = $im->$_;
+        if($img) {
+            $self->hub->headers->content_type("image/$_");
+            $self->hub->headers->print;
+            print $img;
+            last;
+        }
+    }
     return;
 }
 
@@ -86,6 +113,7 @@ sub scode_generate {
 
 sub scode_create {
     my $code = shift;
+    $tmpdir = $self->plugin_directory . '/';
 
     return if (-e $tmpdir.$code);
 
@@ -107,12 +135,13 @@ sub scode_delete {
 
 sub scode_get {
     my $code = shift;
+    $tmpdir = $self->plugin_directory . '/';
 
     srand time;
 
     # Random number back...if have not initialized
     if ($code<=0 || $code>$scode_maxtmp || !-e $tmpdir.$code ) {
-        return scode_generate();
+        return $self->scode_generate();
     }
 
     open(INFILE, $tmpdir.$code);
@@ -123,10 +152,15 @@ sub scode_get {
     return $scode;
 }
 
+package Kwiki::Scode::CGI;
+use base 'Kwiki::CGI';
 
-1;
+cgi 'code';
+cgi 'captcha';
 
-__END__
+package Kwiki::Scode;
+
+__DATA__
 
 =head1 NAME
 
@@ -134,15 +168,9 @@ __END__
 
 =head1 INSTALLATION
 
-To use this plugin, you need to add this B<TWO> lines into
-your C<plugins> file:
+The installation of this plugin is the same as every else's:
 
-    Kwiki::Scode
-    Kwiki::Edit::Score
-
-And remove C<Kwiki::Edit> from that file.  C<Kwiki::Edit::Score> take
-places of C<Kwiki::Edit>, and only update page content when captcha
-code is verified correct.
+    # kwiki -install Kwiki::Scode
 
 =head1 DESCRIPTION
 
@@ -176,3 +204,8 @@ See <http://www.perl.com/perl/misc/Artistic.html>
 
 =cut
 
+__template/tt2/scode_image.html__
+<input type="hidden" name="code" value="[% captcha_code %]" />
+<img src="[% script_name %]?action=captcha&code=[% captcha_code %]" />
+<input type="text" maxlength="6" name="captcha" size="50" value="" />
+<p class="description">Please enter the code as seen in the image above to post your comment.</p>
